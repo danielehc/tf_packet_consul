@@ -1,0 +1,6 @@
+priv/
+pkg/
+tmp/
+terraform.tfstate*
+.terraform.*
+.terraform/
