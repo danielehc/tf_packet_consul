@@ -10,7 +10,8 @@
 
 # Consul Address
 CONSUL_ADDRESS="http://127.0.0.1:8500"
-CONSUL_DNS_ADDRESS="http://127.0.0.1:8600"
+CONSUL_DNS_IP="127.0.0.1"
+CONSUL_DNS_PORT="8600"
 
 # Number of threads
 THREAD_NUM=0
@@ -49,7 +50,7 @@ function ctrl_c() {
 }
 
 echo_t () {
-	echo `date '+%Y-%m-%d_%H:%M:%S'`" $@"
+	echo `date '+%Y-%m-%d_%H%M%S'`" $@"
 }
 
 
@@ -59,9 +60,12 @@ generate_service_payload () {
 	_SERV_UID=$2
 	_SERV_LOCK_FILE=$3
 	_T_NUM=$4
+	_SERV_FILE=$5
+
+	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Generating service definition at ${_SERV_FILE}"
 
 	# Generate generic service - this works for REST API
-	sudo tee /tmp/payload.json <<EOF
+	sudo tee ${_SERV_FILE} <<EOF
 {
     "ID": "${_SERV_NAME}-${_SERV_UID}",
     "name": "${_SERV_NAME}",
@@ -80,7 +84,7 @@ generate_service_payload () {
 
 EOF
 
-	cat /tmp/payload.json
+	# cat /tmp/payload.json
 
 }
 
@@ -109,7 +113,7 @@ generate_random_num() {
 
 generate_random_service_type () {
 	# Array with services
-	SERVICE_NAMES=("web" "db" "redis" "vault" "ldap", "nginx", "mongo")
+	SERVICE_NAMES=("web" "db" "redis" "vault" "ldap" "nginx" "mongo")
 
 	# Seed random generator
 	# RANDOM=$$$(date +%s)
@@ -141,7 +145,7 @@ generate_unbalanced_bool () {
 # * Iterate until the main test is still running (using  ${LOCK_FILE})
 # 	* IF the service is healthy > pick a random service and make it unhealthy (by removing the Service lock file)
 # 	* IF the service is un-healthy > fix it (by adding the Service lock file back)
-# 	* Add a tag to the service changed
+# 	* [TODO] Add a tag to the service changed
 
 uc_service_register_and_monitor() {
 	
@@ -150,95 +154,179 @@ uc_service_register_and_monitor() {
 	echo_t "[ ${T_NUM} ] Check lock file"
 
 	# If lock file doesn't exist we exit
-	if [ ! -x ${LOCK_FILE} ]; then
+	if [ ! -e ${LOCK_FILE} ]; then
 
 		echo_t "[ ${T_NUM} ] Lock file ${LOCK_FILE} not found. Exiting."
 		return 2
 
 	fi
-
+	
 	# Generate random service id, type and name
 	SERVICE_ID=`generate_random_string 5`
 	SERVICE_TYPE=`generate_random_service_type`
-	SERVICE_NAME="${SERVICE_ID}-${SERVICE_TYPE}"
-	SERVICE_LOCK_FILE="${SERVICE_NAME}.lock"
+	SERVICE_NAME="${SERVICE_TYPE}-${SERVICE_ID}"
 
 	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Generating service definition." 
 
 	# Generate folders and files
-	SERVICE_FOLDER=""
+	SERVICE_FOLDER="${CURRENT_SCENARIO_FILE_DIR}/${SERVICE_NAME}"
+	SERVICE_LOCK_FILE="${SERVICE_FOLDER}/${SERVICE_NAME}.lock"
 
 	if  [ ! -d "${SERVICE_FOLDER}" ]; then
 
 		echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service folder $SERVICE_FOLDER does not exist...creating it!"
 
-		echo "mkdir -p ${SERVICE_FOLDER}"
-		echo "touch ${SERVICE_LOCK_FILE}"
+		mkdir -p ${SERVICE_FOLDER}
+		touch ${SERVICE_LOCK_FILE}
 
 	fi 
 
+	if [ ! -d ${SERVICE_FOLDER} ]; then
+		SERVICE_FILE="/tmp/payload.json"
+	else
+		SERVICE_FILE="${SERVICE_FOLDER}/payload.json"
+	fi
 
-	generate_service_payload ${SERVICE_TYPE} ${SERVICE_ID}
+	generate_service_payload ${SERVICE_TYPE} ${SERVICE_ID} ${SERVICE_LOCK_FILE} ${THREAD_NUM} ${SERVICE_FILE}
 
 	# Register the service
 	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service registration."
-	curl --request PUT --data @/tmp/payload.json http://127.0.0.1:8500/v1/agent/service/register
+	curl --request PUT --data @${SERVICE_FILE} ${CONSUL_ADDRESS}/v1/agent/service/register
 
 	if [ $? -ne 0 ]; then
 		echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service registration failed! Exiting."
 		return 1
 	fi
 
-	# Generate the watch
-	#generate_watch_payload ${SERVICE_TYPE} - ${SERVICE_ID}	
-
-	# Iterate on a watch for service name
-
-	STATE="Generate State from query"
-
-	# Whatch a random service for specific tag
-
-	# curl -s http://127.0.0.1:8500/v1/health/state/critical | jq -r '.[] | "\(.ServiceName)  \(.Status)"'
-
-	if [ ${STATE} -eq "OK" ]; then
-		echo "Service is OK"
-
-		# randomly tamper another service by removing the state file (to make it unhealty)
-		# modify service to remove tag recovered
-
-	elif [ ${STATE} -eq "KO" ]; then
-		echo "Service is KO"
-
-		# regenerate state file (to make it healty) and wait until gets healthy
-		# modify service to add tag recovered
-
-	else
-		echo "Service is in unknown state"
-	fi
-
-	# Sleep some time random between 1 and 5 sec
-	sleep `generate_random_num 1`
-
-		# If service is unhealthy: 
-			# regenerate state file (to make it healty) and wait until gets healthy
-			# modify service to add tag recovered
-
-		# If service is healty: 
-			# randomly tamper another service by removing the state file (to make it unhealty)
-			# modify service to remove tag recovered
+	# Iterate on lock
+	while [ -f ${LOCK_FILE} ]; do
 		
-		# Sleep some time random between 1 and 5 sec
+		# Check if service is healthy
+		echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Lock file is still there."
+		sleep 5
+
+		# Check OWN state
+		# curl -s http://127.0.0.1:8500/v1/health/state/critical | jq -r '.[] | "\(.ServiceName)  \(.Status)"'
+		# curl --request GET http://127.0.0.1:8500/v1/health/service/web?tag=web-iypa9 | jq
+
+		# curl -s --data-urlencode 'filter=ServiceID == web-iypa9' --request GET http://127.0.0.1:8500/v1/health/checks/web  | jq
+		# curl --request GET http://127.0.0.1:8500/v1/health/service/web --data-urlencode 'filter=Checks.ServiceID == "web-iypa9"' | jq
+
+		# curl --request GET http://127.0.0.1:8500/v1/health/state/passing --data-urlencode 'filter=ServiceID == web-iypa9' | jq
+
+		_STATUS=`curl -s --request GET ${CONSUL_ADDRESS}/v1/health/checks/${SERVICE_TYPE} | jq -r '.[] | select(.ServiceID=="'${SERVICE_NAME}'") | .Status'`
+
+		if [ ${_STATUS} == "passing" ]; then
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Status: ${_STATUS}"
+
+			# randomly tamper another service by removing the state file (to make it unhealty)
+			_TAMP_LOCK=`find ${CURRENT_SCENARIO_FILE_DIR} -name "*.lock" | grep -v ${SERVICE_NAME} | sort -R | head -1`
+
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Removing: ${_TAMP_LOCK}"
+
+			rm -rf ${_TAMP_LOCK}
+
+		elif [ ${_STATUS} == "critical" ]; then
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Status: ${_STATUS}"
+
+			# regenerate state file (to make it healty) and wait until gets healthy
+			_TAMP_LOCK="${CURRENT_SCENARIO_FILE_DIR}/${SERVICE_NAME}/${SERVICE_NAME}.lock"
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Restoring: ${_TAMP_LOCK}"
+
+			touch "${_TAMP_LOCK}"
+
+			while [ ${_STATUS} != "passing" ]; do
+
+				_STATUS=`curl -s --request GET ${CONSUL_ADDRESS}/v1/health/checks/${SERVICE_TYPE} | jq -r '.[] | select(.ServiceID=="'${SERVICE_NAME}'") | .Status'` 
+				sleep 1
+			done
+
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service is now in good state."
+
+		else
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service is in unknown state"
+		fi
+
+		sleep 10
+
+	done	
+
+	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] THREAD TERMINATED!!"
 }
 
+
 # 2. Three processes with 100 threads each, fetching /watching services in same consul server.
+# Every instance of the UC will:
+# * Pick a random service to watch for
+# * Iterate until the main test is still running (using  ${LOCK_FILE})
+# 	* 
+
 
 uc_service_watch_and_query() {
 
-	echo "Test"
-	# Get list of services
+	T_NUM="$1"
 	
+	echo_t "[ ${T_NUM} ] Check lock file"
+
+	# If lock file doesn't exist we exit
+	if [ ! -e ${LOCK_FILE} ]; then
+
+		echo_t "[ ${T_NUM} ] Lock file ${LOCK_FILE} not found. Exiting."
+		return 2
+
+	fi
+
+	# set -x 
+	SERVICE_TYPE=`generate_random_service_type`
+
+	# curl  -s --request GET ${CONSUL_ADDRESS}/v1/catalog/services
 	# Pick random service
 	
+	# curl  -s --request GET http://127.0.0.1:8500/v1/catalog/service/redis | jq -r '.[] | .ServiceID' | sort -R | head -1
+
+	SERVICE_NAME=`curl  -s --request GET ${CONSUL_ADDRESS}/v1/catalog/service/${SERVICE_TYPE} | jq -r '.[] | .ServiceID' | sort -R | head -1`
+
+	
+
+	while [ "${SERVICE_NAME}" == "" ]; do
+		SERVICE_TYPE=`generate_random_service_type`
+		SERVICE_NAME=`curl  -s --request GET ${CONSUL_ADDRESS}/v1/catalog/service/${SERVICE_TYPE} | jq -r '.[] | .ServiceID' | sort -R | head -1`
+		sleep 1
+	done
+
+	# set +x
+	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service to watch is ${SERVICE_NAME}."
+
+	# Watch and log in background
+	# consul watch -type=keyprefix -prefix=foo/ /provision/scripts/test_watch_generic_handler.sh /tmp/file.log &
+
+	# consul watch -type=service -service=ldap -tag=ldap-wt88o | jq -r '.[] | .Checks[] | select(.ServiceID == "ldap-wt88o") | .Status'
+
+	# Iterate on lock
+	while [ -f ${LOCK_FILE} ]; do
+
+		# set -x 
+		_STATUS=`consul watch -type=service -service=${SERVICE_TYPE} -tag=${SERVICE_NAME} | jq -r '.[] | .Checks[] | select(.ServiceID == "'${SERVICE_NAME}'") | .Status'`
+
+		# set +x 
+		while [ ${_STATUS} != "passing" ]; do
+
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service is still unhealty"
+			sleep 5
+			
+			_STATUS=`consul watch -type=service -service=${SERVICE_TYPE} -tag=${SERVICE_NAME} | jq -r '.[] | .Checks[] | select(.ServiceID == "'${SERVICE_NAME}'") | .Status'` 
+		done
+
+		_SERV_IP=`dig @${CONSUL_DNS_IP} -p ${CONSUL_DNS_PORT} +short ${SERVICE_NAME}.${SERVICE_TYPE}.service.consul`
+
+		echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Service IP is ${_SERV_IP}."
+
+		sleep 5
+
+	done
+
+	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] THREAD TERMINATED!!"
+
 	# Iterate on a watch for service type (using tags)
 
 		# Monitor number of services available
@@ -247,9 +335,9 @@ uc_service_watch_and_query() {
 			# Touch log file $SCENARIO_SCENARIO_watch.log
 			# Execute watch
 
-		consul watch -type=keyprefix -prefix=foo/ /provision/scripts/test_watch_generic_handler.sh /tmp/file.log &
+		# consul watch -type=keyprefix -prefix=foo/ /provision/scripts/test_watch_generic_handler.sh /tmp/file.log &
 
-		consul watch -type=service -service=redis -tag=bar /provision/scripts/test_watch_generic_handler.sh /tmp/file.log &
+		# consul watch -type=service -service=redis -tag=bar /provision/scripts/test_watch_generic_handler.sh /tmp/file.log &
 		
 
 		# If changed from last time write in logs
@@ -345,21 +433,21 @@ SCENARIO_ID=`generate_random_string 10`
 echo_t "SCENARIO ID: ${SCENARIO_ID}"
 
 # Check if scenario_id exists otherwise creates folders for it
-CURRENT_SCENARIO_ROOT="${TEST_DIR}/"`date '+%Y-%m-%d_%H:%M:%S'`"_${SCENARIO_ID}"
+CURRENT_SCENARIO_ROOT="${TEST_DIR}/"`date '+%Y-%m-%d_%H%M%S'`"_${SCENARIO_ID}"
 CURRENT_SCENARIO_FILE_DIR="${CURRENT_SCENARIO_ROOT}/services_config"
 CURRENT_SCENARIO_LOG_DIR="${CURRENT_SCENARIO_ROOT}/logs"
 
 LOCK_FILE="${CURRENT_SCENARIO_ROOT}/lock"
 
 if [ ! -d "${CURRENT_SCENARIO_ROOT}" ]; then
-
+set -x
 	echo_t "Test folder $CURRENT_SCENARIO_ROOT does not exist...creating it!"
 
 	mkdir -p ${CURRENT_SCENARIO_ROOT}
 	mkdir -p ${CURRENT_SCENARIO_FILE_DIR}
 	mkdir -p ${CURRENT_SCENARIO_LOG_DIR}
 	touch ${LOCK_FILE}
-
+set +x
 fi
 
 # Checking if number of threads is a number and is greather than 0
@@ -381,6 +469,7 @@ fi
 
 # |
 # | SCENARIO: SERVICE CREATION
+# | Example:  /provision/scripts/test_generate_consul_traffic.sh -f -t 10 -s service_creation
 # |
 # | ${THREAD_NUM} processes registering services, randomly making services health fail and recover, tagging services
 # |
@@ -399,6 +488,7 @@ if [ "${RUN_SCENARIO}" == "service_creation" ] ; then
 
 # |
 # | SCENARIO: SERVICE MONITORING
+# | Example:  /provision/scripts/test_generate_consul_traffic.sh -f -t 10 -s service_monitoring
 # |
 elif [ "${RUN_SCENARIO}" == "service_monitoring" ] ; then 
 	# This scenario will watch services (picking a randon one every thread) and execute a small script at every change reported
@@ -407,9 +497,9 @@ elif [ "${RUN_SCENARIO}" == "service_monitoring" ] ; then
 	
 	for i in `seq -w 1 ${THREAD_NUM}`; do
     
-		echo Monitoring $i
+		# echo Monitoring $i
     
-		# uc_service_register_and_monitor
+		uc_service_watch_and_query $i &
 
 		#sleep 1
 	done
@@ -421,7 +511,7 @@ fi
 
 # Iterate on lock
 while [ -f ${LOCK_FILE} ]; do
-	sleep 1
+	sleep 1;
 done
 
 echo_t "${SCENARIO_ID} Lock file ${LOCK_FILE} not found...exiting."
@@ -434,3 +524,6 @@ if [ "${FLUSH_AFTER}" = true ]; then
 else
 		echo_t "${SCENARIO_ID} EXECUTION COMPLETE! Scenario files and logs are available at ${CURRENT_SCENARIO_ROOT}"
 fi
+
+# Deregister all services
+# for i in `curl  -s --request GET http://127.0.0.1:8500/v1/catalog/services | jq . | grep - | tr -d '"' | tr -d ','`; do consul services deregister -id=$i; sleep 1; done

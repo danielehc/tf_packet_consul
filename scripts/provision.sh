@@ -46,6 +46,9 @@ apt-get install -y curl ${APTARGS}
 # wget
 apt-get install -y wget ${APTARGS}
 
+# dig
+apt-get install -y dig ${APTARGS}
+
 # Hide Ubuntu splash screen during OS Boot, so you can see if the boot hangs
 # apt-get remove -y plymouth-theme-ubuntu-text
 # sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
