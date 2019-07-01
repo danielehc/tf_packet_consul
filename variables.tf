@@ -25,7 +25,7 @@ variable "plan_arm" {
 variable "facility" {
   description = "Packet Facility"
   # default     = "ewr1"
-  default     = "dfw2"
+  default = "dfw2"
 }
 
 # Operating System variable

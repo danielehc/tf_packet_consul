@@ -5,11 +5,11 @@ provider "packet" {
 
 resource "packet_ssh_key" "key1" {
   name       = "terraform-1"
-  public_key = "${file("/vagrant/labs/tf_packet/priv/id_rsa.pub")}"
+  public_key = "${file("/vagrant/labs/tf_packet_consul/priv/id_rsa.pub")}"
 }
 
 resource "packet_device" "consul_server" {
-  count            = "${var.server_count}" 
+  count            = "${var.server_count}"
   hostname         = "${var.prefix}-consul-server-${count.index}"
   plan             = "${var.plan_arm}"
   facilities       = ["${var.facility}"]
@@ -23,7 +23,7 @@ resource "packet_device" "consul_server" {
     type        = "ssh"
     user        = "root"
     host        = "${self.access_public_ipv4}"
-    private_key = "${file("/vagrant/labs/tf_packet/priv/id_rsa")}"
+    private_key = "${file("/vagrant/labs/tf_packet_consul/priv/id_rsa")}"
   }
 
   # in case we need the root password
@@ -33,7 +33,7 @@ resource "packet_device" "consul_server" {
   }
 
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/scripts/provision.sh"
+    source      = "/vagrant/labs/tf_packet_consul/scripts/provision.sh"
     destination = "/tmp/provision.sh"
   }
 
@@ -55,17 +55,17 @@ resource "packet_device" "consul_server" {
 
   # Provision Config folder
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/tmp/${self.hostname}/consul.d"
+    source      = "/vagrant/labs/tf_packet_consul/tmp/${self.hostname}/consul.d"
     destination = "/etc"
   }
 
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/scripts/install_consul.sh"
+    source      = "/vagrant/labs/tf_packet_consul/scripts/install_consul.sh"
     destination = "/tmp/install_consul.sh"
   }
 
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/scripts/test_generate_consul_traffic.sh"
+    source      = "/vagrant/labs/tf_packet_consul/scripts/test_generate_consul_traffic.sh"
     destination = "/tmp/test_generate_consul_traffic.sh"
   }
 
@@ -79,7 +79,7 @@ resource "packet_device" "consul_server" {
 }
 
 resource "packet_device" "consul_client" {
-  count            = "${var.client_count}" 
+  count            = "${var.client_count}"
   hostname         = "${var.prefix}-consul-client-${count.index}"
   plan             = "${var.plan_arm}"
   facilities       = ["${var.facility}"]
@@ -88,14 +88,14 @@ resource "packet_device" "consul_client" {
   project_id       = "${var.projectid}"
   tags             = ["${var.prefix}"]
   # depends_on       = ["packet_ssh_key.key1", "packet_device.consul_server"]
-  depends_on       = ["packet_ssh_key.key1"]
-  
+  depends_on = ["packet_ssh_key.key1"]
+
 
   connection {
     type        = "ssh"
     user        = "root"
     host        = "${self.access_public_ipv4}"
-    private_key = "${file("/vagrant/labs/tf_packet/priv/id_rsa")}"
+    private_key = "${file("/vagrant/labs/tf_packet_consul/priv/id_rsa")}"
   }
 
   # in case we need the root password
@@ -105,7 +105,7 @@ resource "packet_device" "consul_client" {
   }
 
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/scripts/provision.sh"
+    source      = "/vagrant/labs/tf_packet_consul/scripts/provision.sh"
     destination = "/tmp/provision.sh"
   }
 
@@ -127,17 +127,17 @@ resource "packet_device" "consul_client" {
 
   # Provision Config folder
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/tmp/${self.hostname}/consul.d"
+    source      = "/vagrant/labs/tf_packet_consul/tmp/${self.hostname}/consul.d"
     destination = "/etc"
   }
 
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/scripts/install_consul.sh"
+    source      = "/vagrant/labs/tf_packet_consul/scripts/install_consul.sh"
     destination = "/tmp/install_consul.sh"
   }
 
   provisioner "file" {
-    source      = "/vagrant/labs/tf_packet/scripts/test_generate_consul_traffic.sh"
+    source      = "/vagrant/labs/tf_packet_consul/scripts/test_generate_consul_traffic.sh"
     destination = "/tmp/test_generate_consul_traffic.sh"
   }
 
