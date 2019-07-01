@@ -49,6 +49,26 @@ apt-get install -y wget ${APTARGS}
 # dig
 apt-get install -y dig ${APTARGS}
 
+# Configure Machine for Core dumps
+# https://pve.proxmox.com/wiki/Enable_Core_Dump_systemd
+
+sudo tee /etc/security/limits.d/core.conf <<EOF
+root       hard        core        unlimited
+root       soft        core        unlimited
+consul       hard        core        unlimited
+consul       soft        core        unlimited
+EOF
+
+echo "DefaultLimitCORE=infinity" >> /etc/systemd/system.conf
+
+sudo tee  /etc/sysctl.d/core.conf <<EOF
+kernel.core_pattern = /var/lib/coredumps/core-%e-sig%s-user%u-group%g-pid%p-time%t
+kernel.core_uses_pid = 1
+fs.suid_dumpable = 2
+EOF
+
+systemctl daemon-reexec
+
 # Hide Ubuntu splash screen during OS Boot, so you can see if the boot hangs
 # apt-get remove -y plymouth-theme-ubuntu-text
 # sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub

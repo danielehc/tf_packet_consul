@@ -115,6 +115,9 @@ To remove services afterward is possible to use the following command:
 for i in `curl  -s --request GET http://127.0.0.1:8500/v1/catalog/services | jq . | grep - | tr -d '"' | tr -d ','`; do consul services deregister -id=$i; sleep 1; done		
 ```
 
+**Note:** the scenario seems to converge to a state where only few lock files survive. For this reason a check is in place to restore all locks in case their number is too small.
+
+
 ### Service Monitoring and DNS
 
 Every instance of the scenario will:

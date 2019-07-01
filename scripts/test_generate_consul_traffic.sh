@@ -146,6 +146,7 @@ generate_unbalanced_bool () {
 # 	* IF the service is healthy > pick a random service and make it unhealthy (by removing the Service lock file)
 # 	* IF the service is un-healthy > fix it (by adding the Service lock file back)
 # 	* [TODO] Add a tag to the service changed
+# 	* If lock files are too few, restores all lock files.
 
 uc_service_register_and_monitor() {
 	
@@ -249,6 +250,14 @@ uc_service_register_and_monitor() {
 
 		sleep 10
 
+		# Checks number of locks left and if less than ${THREAD_NUM}/10 restores all locks
+
+		_REMAIN_LOCKS=`find ${CURRENT_SCENARIO_FILE_DIR} -name "*.lock" | wc -l`
+
+		if [ ! ${_REMAIN_LOCKS} -gt $(( THREAD_NUM / 3 ))  ]; then
+			echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] Only ${_REMAIN_LOCKS} locks left. Restoring."
+			for i in `ls -1 ${CURRENT_SCENARIO_FILE_DIR}`; do touch ${CURRENT_SCENARIO_FILE_DIR}/$i/$i.lock; done
+		fi
 	done	
 
 	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] THREAD TERMINATED!!"
@@ -260,7 +269,6 @@ uc_service_register_and_monitor() {
 # * Pick a random service to watch for
 # * Iterate until the main test is still running (using  ${LOCK_FILE})
 # 	* 
-
 
 uc_service_watch_and_query() {
 
@@ -326,27 +334,6 @@ uc_service_watch_and_query() {
 	done
 
 	echo_t "[ ${T_NUM} ][ ${SERVICE_NAME} ] THREAD TERMINATED!!"
-
-	# Iterate on a watch for service type (using tags)
-
-		# Monitor number of services available
-
-			# Check handler file existence
-			# Touch log file $SCENARIO_SCENARIO_watch.log
-			# Execute watch
-
-		# consul watch -type=keyprefix -prefix=foo/ /provision/scripts/test_watch_generic_handler.sh /tmp/file.log &
-
-		# consul watch -type=service -service=redis -tag=bar /provision/scripts/test_watch_generic_handler.sh /tmp/file.log &
-		
-
-		# If changed from last time write in logs
-	
-		# Query the service (generate some load on the DNS interface)
-
-		# If unhealty, write in logs and wait until gets healthy
-
-		# Sleep some time random between 1 and 5 sec
 
 }
 
@@ -414,17 +401,6 @@ done
 
 set -- "${POSITIONAL[@]}" # restore positional parameters
 
-
-# Test bench for functions
-# REMOVE before flight
-for i in `seq -w 1 $1`; do
-    # echo_t Iteration $i 
-    
-	# uc_service_register_and_monitor
-
-    sleep 1
-done
-
 # Generate scenario and test data
 # -------------------------------
 
@@ -473,6 +449,8 @@ fi
 # |
 # | ${THREAD_NUM} processes registering services, randomly making services health fail and recover, tagging services
 # |
+# | Note: The function seems to converge to a point where no lock file is present anymore
+# | 		It might need to implement some form of lock restoring.
 if [ "${RUN_SCENARIO}" == "service_creation" ] ; then 
 	# This scenario will create services, monitor health state and randomly generate outages
 	echo "Generating services"
@@ -527,3 +505,7 @@ fi
 
 # Deregister all services
 # for i in `curl  -s --request GET http://127.0.0.1:8500/v1/catalog/services | jq . | grep - | tr -d '"' | tr -d ','`; do consul services deregister -id=$i; sleep 1; done
+
+# Restore locks (and service health)
+# cd `find /tmp/consul/load_test -maxdepth 1 | sort -r | head -1`/services_config
+# for i in `ls -1`; do touch ./$i/$i.lock; done
